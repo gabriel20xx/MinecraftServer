@@ -1,0 +1,18 @@
+version: '3'
+services:
+  minecraft-server:
+    image: openjdk:17-oracle
+    container_name: minecraft-container
+    working_dir: /app
+    ports:
+      - "25565:25565"
+    environment:
+      - JAVA_XMS=1024M
+      - JAVA_XMX=1024M
+    volumes:
+      - minecraft-data:/app
+    command: sh -c "java -Xms$JAVA_XMS -Xmx$JAVA_XMX -jar spigot-1.20.1.jar nogui"
+
+volumes:
+  minecraft-data:
+

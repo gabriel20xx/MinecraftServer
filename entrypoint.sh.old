@@ -1,0 +1,97 @@
+#!/bin/sh
+
+set x
+
+cd /
+
+if [ ! -d /app ]; then
+  mkdir -p /app
+fi
+
+cd /data
+
+if [ ! -f /app/eula.txt ]; then
+  cp eula.txt /app
+fi
+
+if [ ! -f /app/spigot-1.20.1.jar ]; then
+  cp spigot-1.20.1.jar /app
+fi
+
+if [ ! -f /app/server.properties ]; then
+  cp server.properties /app
+fi
+
+cd /app
+
+if [ -n "$EULA" ]; then
+  sed -i "s/eula=.*/eula=$EULA/" eula.txt
+fi
+
+if [ -n "$MOTD" ]; then
+  sed -i "s/motd=.*/motd=\"$MOTD\"/" server.properties
+fi
+
+# OPS processing
+
+if [ -n "$OPS" ]; then
+  opsArray=""
+  IFS=','
+
+  for name in $OPS; do
+    response=$(curl -s "https://api.mojang.com/users/profiles/minecraft/$name")
+
+    # Check if the response contains an error message
+    if echo "$response" | jq -e '.errorMessage' > /dev/null; then
+      errorMessage=$(echo "$response" | jq -r '.errorMessage')
+      echo "Skipping '$name': $errorMessage"
+      continue
+    fi
+
+    id=$(echo "$response" | jq -r '.id')
+
+    current_year=$(date "+%Y")
+    current_month=$(date "+%m")
+    current_day=$(date "+%d")
+
+    # Calculate next month and handle year overflow
+    next_month=$(expr "$current_month" + 1)
+    next_year=$current_year
+
+    if [ "$next_month" -gt 12 ]; then
+      next_month=1
+      next_year=$(expr "$current_year" + 1)
+    fi
+
+    # Get current time, minute, second, and timezone
+    current_time=$(date "+%H:%M:%S %z")
+
+    # Format the next month timestamp
+    next_month_timestamp="$next_year-$next_month-$current_day $current_time"
+
+    opsArray="${opsArray%,}"
+    opsArray="$opsArray
+  {
+    \"uuid\": \"$id\",
+    \"name\": \"$name\",
+    \"level\": 4,
+    \"bypassesPlayerLimit\": false
+  },"
+
+    usercacheArray="${usercacheArray%,}"; usercacheArray="$usercacheArray{\"name\":\"$name\",\"uuid\":\"$id\",\"expiresOn\":\"$next_month_timestamp\"},"
+  done
+
+  # Wrap the entries in brackets to form a JSON array
+  opsArray="[${opsArray%,}
+]"
+
+  usercacheArray="[${usercacheArray%,}]"
+
+  echo "$opsArray" > ops_temp.json  # Write to a temporary file
+  echo "$opsArray" > ops.json
+  echo "$usercacheArray" > usercache_temp.json  # Write to a temporary file
+  echo "$usercacheArray" > usercache.json
+fi
+
+# Fork the process to run the 'java' command in the background
+exec java -Xms$MIN_MEM -Xmx$MAX_MEM -jar spigot-1.20.1.jar nogui
